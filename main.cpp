@@ -74,12 +74,16 @@ int HandleTransfer(int socket) {
 	uint8_t buffer[32];
 	sockaddr client_addr;
 	socklen_t client_addr_size = sizeof(client_addr);
+
 	assert(recvfrom(socket, &buffer, sizeof(buffer), 0, &client_addr, &client_addr_size) != -1);
 	RRQWRQ message(buffer);
 
-	if (message.opcode_ == 2) {
-		cout << "Client is sending a file to us.";
+	if (message.opcode_ == Opcode::kWRQ) {
+		cout << "Client is sending a file " << message.filename_ << " to us.\n";
 		AcknowledgePacket(socket, client_addr, 0);
+	}
+	else if (message.opcode_ == Opcode::kRRQ) {
+		cout << "Client asks for a file " << message.filename_ << ".\n";
 	}
 
 	shutdown(socket, SHUT_RDWR);
