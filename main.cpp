@@ -4,10 +4,13 @@
 
 #include <iostream>
 #include <algorithm>
+#include <fstream>
+#include <vector>
 
 #include <cassert>
 #include <cstddef>
 #include<cmath>
+#include <array>
 
 using namespace std; //REMOVEME
 
@@ -61,29 +64,64 @@ public:
 	};
 };
 
+vector<uint8_t> ReadFile(string filename) {
+
+	ifstream read_stream(filename);
+	string zawartosc((istreambuf_iterator<char>(read_stream)), istreambuf_iterator<char>());
+	long int a = read_stream.gcount();
+	const char* content_pointer = zawartosc.c_str();
+	vector<uint8_t> bytes(content_pointer, content_pointer + zawartosc.size());
+	read_stream.close();
+
+	return bytes;
+}
+
 void AcknowledgePacket(int socket, sockaddr client_addr, uint16_t block_number) {
 	uint8_t buffer[4] = { 0 };
 	buffer[1] = kACK;
-	uint8_t *block_number_array = ConvertIntegerTypes(block_number);
+	uint8_t* block_number_array = ConvertIntegerTypes(block_number);
 	copy(block_number_array, block_number_array + 2, buffer + 2);
 	sendto(socket, &buffer, sizeof(buffer), 0, &client_addr, sizeof(client_addr));
 }
 
+void SendData(int socket, sockaddr client_addr, uint16_t block_number, vector<uint8_t> data) {
+	vector<uint8_t> bytes;
+	bytes.reserve(4 + data.size());
+	bytes.resize(4, 0);
+
+	uint8_t* block_number_bytes = ConvertIntegerTypes(block_number);
+	bytes[1] = Opcode::kDATA;
+	bytes[2] = *(block_number_bytes);
+	bytes[3] = *(block_number_bytes + 1);
+	bytes.insert(bytes.end(), data.begin(), data.end());
+
+	assert(sendto(socket, bytes.data(), bytes.size(), 0, &client_addr, sizeof(client_addr)) != -1);
+	cout << "The data has been sent.";
+}
+
 int HandleTransfer(int socket) {
 
-	uint8_t buffer[32];
-	sockaddr client_addr;
-	socklen_t client_addr_size = sizeof(client_addr);
+	uint8_t buffer[32]; //TODO: Precise me
+	sockaddr received_addr;
+	socklen_t addr_size = sizeof(sockaddr);
 
-	assert(recvfrom(socket, &buffer, sizeof(buffer), 0, &client_addr, &client_addr_size) != -1);
+	assert(recvfrom(socket, &buffer, sizeof(buffer), 0, &received_addr, &addr_size) != -1);
+
+	const sockaddr kclient_addr = received_addr;
+
 	RRQWRQ message(buffer);
+
+	uint16_t block_number = 1;
 
 	if (message.opcode_ == Opcode::kWRQ) {
 		cout << "Client is sending a file " << message.filename_ << " to us.\n";
-		AcknowledgePacket(socket, client_addr, 0);
+		AcknowledgePacket(socket, kclient_addr, 0);
 	}
 	else if (message.opcode_ == Opcode::kRRQ) {
 		cout << "Client asks for a file " << message.filename_ << ".\n";
+
+		vector<uint8_t> file_bytes = ReadFile(message.filename_);
+		SendData(socket, kclient_addr, block_number, file_bytes);
 	}
 
 	shutdown(socket, SHUT_RDWR);
