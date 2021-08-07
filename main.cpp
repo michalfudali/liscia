@@ -1,6 +1,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include<unistd.h>
 
 #include <iostream>
 #include <algorithm>
@@ -64,14 +65,25 @@ public:
 	};
 };
 
-vector<uint8_t> ReadFile(string filename) {
+vector<uint8_t> ReadNBytesFromFile(string filename, int n) {
 
-	ifstream read_stream(filename);
-	string zawartosc((istreambuf_iterator<char>(read_stream)), istreambuf_iterator<char>());
-	long int a = read_stream.gcount();
-	const char* content_pointer = zawartosc.c_str();
-	vector<uint8_t> bytes(content_pointer, content_pointer + zawartosc.size());
-	read_stream.close();
+	static ifstream read_stream;
+	if (!read_stream.is_open()) {
+		read_stream.open(filename);
+	}
+
+	streampos starting_read_position = read_stream.tellg();
+
+	char* char_bytes = new char[n];
+
+	if (__CHAR_BIT__ / 8 == sizeof(uint8_t)) {
+		read_stream.readsome(char_bytes, n);
+	} else {
+		cout << "ERROR: Incompatible machine.";
+	}
+
+	vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
+	delete(char_bytes);
 
 	return bytes;
 }
@@ -101,7 +113,7 @@ void SendData(int socket, sockaddr client_addr, uint16_t block_number, vector<ui
 
 int HandleTransfer(int socket) {
 
-	uint8_t buffer[32]; //TODO: Precise me
+	uint8_t buffer[512]; //TODO: Precise me
 	sockaddr received_addr;
 	socklen_t addr_size = sizeof(sockaddr);
 
@@ -110,6 +122,7 @@ int HandleTransfer(int socket) {
 	const sockaddr kclient_addr = received_addr;
 
 	RRQWRQ message(buffer);
+	vector<uint8_t> file_bytes;
 
 	uint16_t block_number = 1;
 
@@ -120,8 +133,13 @@ int HandleTransfer(int socket) {
 	else if (message.opcode_ == Opcode::kRRQ) {
 		cout << "Client asks for a file " << message.filename_ << ".\n";
 
-		vector<uint8_t> file_bytes = ReadFile(message.filename_);
-		SendData(socket, kclient_addr, block_number, file_bytes);
+		do {
+			file_bytes = ReadNBytesFromFile(message.filename_, 512);
+			SendData(socket, kclient_addr, block_number, file_bytes);
+			block_number++;
+
+			sleep(1);
+		} while (file_bytes.size() >= 512);
 	}
 
 	shutdown(socket, SHUT_RDWR);
