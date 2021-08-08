@@ -10,10 +10,12 @@
 
 #include <cassert>
 #include <cstddef>
-#include<cmath>
+#include <cmath>
 #include <array>
 
 using namespace std; //REMOVEME
+
+static socklen_t ksockaddr_size = sizeof(sockaddr);
 
 enum Opcode {
 	kRRQ = 1,
@@ -29,8 +31,6 @@ enum class Mode {
 	kmail
 };
 
-const string kmodes[3] = { "netascii", "octet", "mail" };
-
 inline uint16_t ConvertIntegerTypes(uint8_t bytes[2]) {
 	return (bytes[0] << 8) | bytes[1];
 }
@@ -44,13 +44,11 @@ inline uint8_t* ConvertIntegerTypes(uint16_t opcode) {
 
 class RRQWRQ {
 public:
-	Opcode opcode_;
+	const Opcode opcode_;
 	string filename_;
 	Mode mode_;
 
-	RRQWRQ(uint8_t packet[]) {
-		opcode_ = static_cast<Opcode>(ConvertIntegerTypes(&packet[0]));
-
+	RRQWRQ(uint8_t packet[]) : opcode_(static_cast<Opcode>(ConvertIntegerTypes(&packet[0]))) {
 		for (int i = 2; packet[i] != '\0'; i++) {
 			filename_ += packet[i];
 		}
@@ -61,13 +59,19 @@ public:
 			mode_name += packet[i];
 		}
 
+		static const string kmodes[3] = { "netascii", "octet", "mail" };
+
 		mode_ = static_cast<Mode>(distance(kmodes, find(kmodes, kmodes + sizeof(kmodes)/sizeof(string), mode_name)));
 	};
 };
 
+//class Data {
+//	static const Opcode opcode_ = Opcode::kDATA;
+//};
+
 vector<uint8_t> ReadNBytesFromFile(string filename, int n) {
 
-	static ifstream read_stream;
+	static ifstream read_stream; //TODO: Close read stream
 	if (!read_stream.is_open()) {
 		read_stream.open(filename);
 	}
@@ -85,8 +89,36 @@ vector<uint8_t> ReadNBytesFromFile(string filename, int n) {
 	vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
 	delete(char_bytes);
 
+	if (bytes.size() < 512) {
+		read_stream.close();
+	}
+
 	return bytes;
 }
+
+void WriteNBytesToFile(string filename, vector<uint8_t> bytes) {
+	static ofstream write_stream;
+	if (!write_stream.is_open()) {
+		write_stream.open(filename, std::ios_base::ate | ios_base::trunc);
+	}
+
+	write_stream.write(reinterpret_cast<char*>(bytes.data()), bytes.size());
+
+	if (bytes.size() < 512) {
+		write_stream.close();
+	}
+}
+
+vector<uint8_t> SafelyReceivePacket(const int socket, const sockaddr expected_addr, size_t max_packet_size) {
+	vector<uint8_t> bytes(max_packet_size);
+	sockaddr received_addr;
+	ssize_t n = recvfrom(socket, bytes.data(), max_packet_size, 0, &received_addr, &ksockaddr_size);
+	assert(n != -1);
+	bytes.resize(n);
+	//assert(received_addr.sa_data == expected_addr.sa_data); TODO: IMPLEMENT SENDER CHECKING
+	return bytes;
+}
+
 
 void AcknowledgePacket(int socket, sockaddr client_addr, uint16_t block_number) {
 	uint8_t buffer[4] = { 0 };
@@ -111,17 +143,37 @@ void SendData(int socket, sockaddr client_addr, uint16_t block_number, vector<ui
 	cout << "The data has been sent.";
 }
 
+void WaitForAcknowledgment(const int socket, const sockaddr expected_addr, const uint16_t expected_block_number) {
+	vector<uint8_t> buffer = SafelyReceivePacket(socket, expected_addr, 4);
+
+	if (ConvertIntegerTypes(buffer.data()) == Opcode::kACK) {
+		if (ConvertIntegerTypes(&buffer[2]) == expected_block_number) {
+			cout << "Received Acknowledgment for block no. " << expected_block_number << ".\n";
+		}
+	}
+}
+
+vector<uint8_t> WaitForData(const int socket, const sockaddr expected_addr, const uint16_t expected_block_number) {
+	vector<uint8_t> bytes = SafelyReceivePacket(socket, expected_addr, 516);
+
+	if (ConvertIntegerTypes(bytes.data()) == Opcode::kDATA) {
+		if (ConvertIntegerTypes(bytes.data() + 2) == expected_block_number) {
+			cout << "Received Data block no. " << expected_block_number << ".\n";
+			return vector<uint8_t>(bytes.data() + 4, bytes.data() + bytes.size());
+		}
+	}
+}
+
 int HandleTransfer(int socket) {
 
-	uint8_t buffer[512]; //TODO: Precise me
+	uint8_t connection_init_buffer[132]; //TODO: Precise me, e.g. 4 bytes + 2 * 64 * sizeof(string)
 	sockaddr received_addr;
-	socklen_t addr_size = sizeof(sockaddr);
 
-	assert(recvfrom(socket, &buffer, sizeof(buffer), 0, &received_addr, &addr_size) != -1);
+	assert(recvfrom(socket, &connection_init_buffer, sizeof(connection_init_buffer), 0, &received_addr, reinterpret_cast<socklen_t*>(&ksockaddr_size)) != -1);
 
 	const sockaddr kclient_addr = received_addr;
 
-	RRQWRQ message(buffer);
+	RRQWRQ message(connection_init_buffer);
 	vector<uint8_t> file_bytes;
 
 	uint16_t block_number = 1;
@@ -129,17 +181,28 @@ int HandleTransfer(int socket) {
 	if (message.opcode_ == Opcode::kWRQ) {
 		cout << "Client is sending a file " << message.filename_ << " to us.\n";
 		AcknowledgePacket(socket, kclient_addr, 0);
+		file_bytes.reserve(516);
+		do {
+			file_bytes = WaitForData(socket, kclient_addr, block_number);
+
+			WriteNBytesToFile(message.filename_, file_bytes);
+
+			AcknowledgePacket(socket, kclient_addr, block_number);
+
+			block_number++;
+		} while (file_bytes.size() == 512);
+
 	}
 	else if (message.opcode_ == Opcode::kRRQ) {
 		cout << "Client asks for a file " << message.filename_ << ".\n";
-
 		do {
 			file_bytes = ReadNBytesFromFile(message.filename_, 512);
 			SendData(socket, kclient_addr, block_number, file_bytes);
+			WaitForAcknowledgment(socket, kclient_addr, block_number);
+			
 			block_number++;
-
-			sleep(1);
-		} while (file_bytes.size() >= 512);
+			sleep(1); //remove me
+		} while (file_bytes.size() == 512);
 	}
 
 	shutdown(socket, SHUT_RDWR);
@@ -147,6 +210,8 @@ int HandleTransfer(int socket) {
 
 int main(int const argc, char const *argv[]) {
 	
+	chdir("/tftp/");
+
 	sockaddr_in addr_in = { AF_INET, htons(69), INADDR_ANY };
 	sockaddr *paddr = reinterpret_cast<sockaddr*>(&addr_in);
 
