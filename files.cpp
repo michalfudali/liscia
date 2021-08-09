@@ -45,10 +45,16 @@ void WriteBytesToFile(string filename, vector<uint8_t> bytes) {
 	}
 }
 
-void WriteCharactersToFile(string filename, vector<uint8_t> bytes) {
+void WriteNetASCIIToFile(string filename, vector<uint8_t> bytes) {
 	static ofstream write_stream;
 	if (!write_stream.is_open()) {
 		write_stream.open(filename, std::ios_base::ate | ios_base::trunc);
+	}
+
+	for (int i = 0; i < bytes.size(); i++) {
+		if (bytes[i] == 13) {
+			bytes.erase(bytes.begin() + i);
+		}
 	}
 
 	write_stream.write(reinterpret_cast<char*>(bytes.data()), bytes.size());
@@ -57,7 +63,7 @@ void WriteCharactersToFile(string filename, vector<uint8_t> bytes) {
 		write_stream.close();
 	}
 }
-vector<uint8_t> ReadCharactersFromFile(string filename, int n) {
+vector<uint8_t> ReadNetASCIIFromFile(string filename, int n) {
 
 	static ifstream read_stream;
 	if (!read_stream.is_open()) {
@@ -80,6 +86,19 @@ vector<uint8_t> ReadCharactersFromFile(string filename, int n) {
 
 	if (bytes.size() < 512) {
 		read_stream.close();
+	}
+
+	for (int i = 0; i < bytes.size(); i++) {
+		if (bytes[i] == 10) {
+			if (i == 0 || bytes[i - 1] != 13) {
+				bytes.insert(bytes.begin() + i, 13);
+			}
+		}
+		else if (bytes[i] == 13) {
+			if (i == bytes.size() - 1 || bytes[i + 1] != 10) {
+				bytes.insert(bytes.begin() + i + 1, 0);
+			}
+		}
 	}
 
 	return bytes;

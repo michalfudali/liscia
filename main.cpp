@@ -176,7 +176,7 @@ int HandleTransfer(int socket) {
 			do {
 				file_bytes = WaitForData(socket, kclient_addr, block_number);
 
-				WriteCharactersToFile(message.filename_, file_bytes);
+				WriteNetASCIIToFile(message.filename_, file_bytes);
 
 				AcknowledgePacket(socket, kclient_addr, block_number);
 
@@ -187,7 +187,7 @@ int HandleTransfer(int socket) {
 		else if (message.opcode_ == Opcode::kRRQ) {
 			cout << "Client asks for a file " << message.filename_ << ".\n";
 			do {
-				file_bytes = ReadCharactersFromFile(message.filename_, 512);
+				file_bytes = ReadNetASCIIFromFile(message.filename_, 512);
 				SendData(socket, kclient_addr, block_number, file_bytes);
 				WaitForAcknowledgment(socket, kclient_addr, block_number);
 
