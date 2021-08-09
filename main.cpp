@@ -1,17 +1,17 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include<unistd.h>
+#include <unistd.h>
+
+#include "main.hpp"
 
 #include <iostream>
 #include <algorithm>
 #include <fstream>
-#include <vector>
 
 #include <cassert>
 #include <cstddef>
 #include <cmath>
-#include <array>
 
 using namespace std; //REMOVEME
 
@@ -68,46 +68,6 @@ public:
 //class Data {
 //	static const Opcode opcode_ = Opcode::kDATA;
 //};
-
-vector<uint8_t> ReadNBytesFromFile(string filename, int n) {
-
-	static ifstream read_stream; //TODO: Close read stream
-	if (!read_stream.is_open()) {
-		read_stream.open(filename);
-	}
-
-	streampos starting_read_position = read_stream.tellg();
-
-	char* char_bytes = new char[n];
-
-	if (__CHAR_BIT__ / 8 == sizeof(uint8_t)) {
-		read_stream.readsome(char_bytes, n);
-	} else {
-		cout << "ERROR: Incompatible machine.";
-	}
-
-	vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
-	delete(char_bytes);
-
-	if (bytes.size() < 512) {
-		read_stream.close();
-	}
-
-	return bytes;
-}
-
-void WriteNBytesToFile(string filename, vector<uint8_t> bytes) {
-	static ofstream write_stream;
-	if (!write_stream.is_open()) {
-		write_stream.open(filename, std::ios_base::ate | ios_base::trunc);
-	}
-
-	write_stream.write(reinterpret_cast<char*>(bytes.data()), bytes.size());
-
-	if (bytes.size() < 512) {
-		write_stream.close();
-	}
-}
 
 vector<uint8_t> SafelyReceivePacket(const int socket, const sockaddr expected_addr, size_t max_packet_size) {
 	vector<uint8_t> bytes(max_packet_size);
@@ -169,7 +129,7 @@ int HandleTransfer(int socket) {
 	uint8_t connection_init_buffer[132]; //TODO: Precise me, e.g. 4 bytes + 2 * 64 * sizeof(string)
 	sockaddr received_addr;
 
-	assert(recvfrom(socket, &connection_init_buffer, sizeof(connection_init_buffer), 0, &received_addr, reinterpret_cast<socklen_t*>(&ksockaddr_size)) != -1);
+	assert(recvfrom(socket, &connection_init_buffer, sizeof(connection_init_buffer), 0, &received_addr, &ksockaddr_size) != -1);
 
 	const sockaddr kclient_addr = received_addr;
 
@@ -178,31 +138,62 @@ int HandleTransfer(int socket) {
 
 	uint16_t block_number = 1;
 
-	if (message.opcode_ == Opcode::kWRQ) {
-		cout << "Client is sending a file " << message.filename_ << " to us.\n";
-		AcknowledgePacket(socket, kclient_addr, 0);
-		file_bytes.reserve(516);
-		do {
-			file_bytes = WaitForData(socket, kclient_addr, block_number);
+	if (message.mode_ == Mode::koctet) {
+		if (message.opcode_ == Opcode::kWRQ) {
+			cout << "Client is sending a file " << message.filename_ << " to us.\n";
+			cout << "Using octet mode.\n";
 
-			WriteNBytesToFile(message.filename_, file_bytes);
+			AcknowledgePacket(socket, kclient_addr, 0);
+			file_bytes.reserve(516);
+			do {
+				file_bytes = WaitForData(socket, kclient_addr, block_number);
 
-			AcknowledgePacket(socket, kclient_addr, block_number);
+				WriteBytesToFile(message.filename_, file_bytes);
 
-			block_number++;
-		} while (file_bytes.size() == 512);
+				AcknowledgePacket(socket, kclient_addr, block_number);
 
+				block_number++;
+			} while (file_bytes.size() == 512);
+
+		}
+		else if (message.opcode_ == Opcode::kRRQ) {
+			cout << "Client asks for a file " << message.filename_ << ".\n";
+			do {
+				file_bytes = ReadBytesFromFile(message.filename_, 512);
+				SendData(socket, kclient_addr, block_number, file_bytes);
+				WaitForAcknowledgment(socket, kclient_addr, block_number);
+
+				block_number++;
+			} while (file_bytes.size() == 512);
+		}
 	}
-	else if (message.opcode_ == Opcode::kRRQ) {
-		cout << "Client asks for a file " << message.filename_ << ".\n";
-		do {
-			file_bytes = ReadNBytesFromFile(message.filename_, 512);
-			SendData(socket, kclient_addr, block_number, file_bytes);
-			WaitForAcknowledgment(socket, kclient_addr, block_number);
-			
-			block_number++;
-			sleep(1); //remove me
-		} while (file_bytes.size() == 512);
+	else if (message.mode_ == Mode::knetascii) {
+		if (message.opcode_ == Opcode::kWRQ) {
+			cout << "Client is sending a file " << message.filename_ << " to us.\n";
+			cout << "Using netascii mode.\n";
+			AcknowledgePacket(socket, kclient_addr, 0);
+			file_bytes.reserve(516);
+			do {
+				file_bytes = WaitForData(socket, kclient_addr, block_number);
+
+				WriteCharactersToFile(message.filename_, file_bytes);
+
+				AcknowledgePacket(socket, kclient_addr, block_number);
+
+				block_number++;
+			} while (file_bytes.size() == 512);
+
+		}
+		else if (message.opcode_ == Opcode::kRRQ) {
+			cout << "Client asks for a file " << message.filename_ << ".\n";
+			do {
+				file_bytes = ReadCharactersFromFile(message.filename_, 512);
+				SendData(socket, kclient_addr, block_number, file_bytes);
+				WaitForAcknowledgment(socket, kclient_addr, block_number);
+
+				block_number++;
+			} while (file_bytes.size() == 512);
+		}
 	}
 
 	shutdown(socket, SHUT_RDWR);
@@ -222,7 +213,6 @@ int main(int const argc, char const *argv[]) {
 	fds[0].events = POLLIN;
 	assert(bind(fds[0].fd, paddr, sizeof(*paddr)) != -1);
 	
-	//while(1)
 	{
 		cout << "Waiting for connection...\n";
 		poll(fds, sizeof(fds) / sizeof(fds[0]), -1);
