@@ -17,12 +17,24 @@ using namespace std; //REMOVEME
 
 static socklen_t ksockaddr_size = sizeof(sockaddr);
 
-enum Opcode {
+enum Opcode : uint16_t {
 	kRRQ = 1,
 	kWRQ = 2,
 	kDATA = 3,
 	kACK = 4,
 	kERROR = 5
+};
+
+enum ErrorCode : uint16_t{
+	kNotDefined,
+	kFileNotFound,
+	kAccessViolation,
+	kDiskFull = 3,
+	kAllocationExceeded = 3,
+	kIllegalOperation,
+	kUnknownTransferID,
+	kFileAlreadyExists,
+	kNoSuchUser
 };
 
 enum class Mode {
@@ -42,13 +54,44 @@ inline uint8_t* ConvertIntegerTypes(uint16_t opcode) {
 	return bytes;
 }
 
-class RRQWRQ {
+class Message {
 public:
 	const Opcode opcode_;
+	Message(Opcode opcode) : opcode_(opcode) {};
+};
+
+class ERROR : public Message {
+public:
+	ErrorCode error_code_;
+	string err_msg_;
+
+	ERROR(uint8_t packet[]) : Message(Opcode::kERROR) {
+		error_code_ = static_cast<ErrorCode>(ConvertIntegerTypes(packet + 2));
+		err_msg_ = reinterpret_cast<char*>(packet + 4);
+	};
+
+	ERROR(ErrorCode error_code, string err_msg) :
+		Message(Opcode::kERROR),
+		error_code_(error_code),
+		err_msg_(err_msg) {};
+
+	vector<uint8_t> GetBinaryRepresentation() {
+		uint8_t* opcode_bytes = ConvertIntegerTypes(opcode_);
+		vector<uint8_t> bytes(opcode_bytes, opcode_bytes + 2);
+		uint8_t* error_code_bytes = ConvertIntegerTypes(error_code_);
+		bytes.insert(bytes.end(), error_code_bytes, error_code_bytes + 2);
+		const char* err_msg_bytes = err_msg_.c_str();
+		bytes.insert(bytes.end(), err_msg_bytes, err_msg_bytes + err_msg_.size() + 1);
+		return bytes;
+	}
+};
+
+class RRQWRQ : public Message {
+public:
 	string filename_;
 	Mode mode_;
 
-	RRQWRQ(uint8_t packet[]) : opcode_(static_cast<Opcode>(ConvertIntegerTypes(&packet[0]))) {
+	RRQWRQ(uint8_t packet[]) : Message(static_cast<Opcode>(ConvertIntegerTypes(&packet[0]))) {
 		for (int i = 2; packet[i] != '\0'; i++) {
 			filename_ += packet[i];
 		}
@@ -79,13 +122,17 @@ vector<uint8_t> SafelyReceivePacket(const int socket, const sockaddr expected_ad
 	return bytes;
 }
 
-
 void AcknowledgePacket(int socket, sockaddr client_addr, uint16_t block_number) {
 	uint8_t buffer[4] = { 0 };
 	buffer[1] = kACK;
 	uint8_t* block_number_array = ConvertIntegerTypes(block_number);
 	copy(block_number_array, block_number_array + 2, buffer + 2);
 	sendto(socket, &buffer, sizeof(buffer), 0, &client_addr, sizeof(client_addr));
+}
+
+void ReturnError(int socket, sockaddr client_addr, ERROR error) {
+	vector<uint8_t> buffer = error.GetBinaryRepresentation();
+	sendto(socket, buffer.data(), buffer.size(), 0, &client_addr, sizeof(client_addr));
 }
 
 void SendData(int socket, sockaddr client_addr, uint16_t block_number, vector<uint8_t> data) {
@@ -125,7 +172,7 @@ vector<uint8_t> WaitForData(const int socket, const sockaddr expected_addr, cons
 }
 
 int HandleTransfer(int socket) {
-
+	
 	uint8_t connection_init_buffer[132]; //TODO: Precise me, e.g. 4 bytes + 2 * 64 * sizeof(string)
 	sockaddr received_addr;
 
@@ -223,3 +270,4 @@ int main(int const argc, char const *argv[]) {
 
 	return 0;
 }
+
