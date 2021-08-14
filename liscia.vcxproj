@@ -77,9 +77,13 @@
   <ItemGroup>
     <ClCompile Include="files.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="communication.cpp" />
+    <ClCompile Include="packets.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="main.hpp" />
+    <ClInclude Include="files.hpp" />
+    <ClInclude Include="communication.hpp" />
+    <ClInclude Include="packets.hpp" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

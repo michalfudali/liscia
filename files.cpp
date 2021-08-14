@@ -1,18 +1,17 @@
 #include <fstream>
 #include <iostream>
 
-#include "main.hpp"
+#include <string>
+#include <vector>
 
-using namespace std;
+std::vector<uint8_t> ReadBytesFromFile(std::string filename, int n) {
 
-vector<uint8_t> ReadBytesFromFile(string filename, int n) {
-
-	static ifstream read_stream; //TODO: Close read stream
+	static std::ifstream read_stream; //TODO: Close read stream
 	if (!read_stream.is_open()) {
 		read_stream.open(filename, std::ios_base::binary);
 	}
 
-	streampos starting_read_position = read_stream.tellg();
+	std::streampos starting_read_position = read_stream.tellg();
 
 	char* char_bytes = new char[n];
 
@@ -20,10 +19,10 @@ vector<uint8_t> ReadBytesFromFile(string filename, int n) {
 		read_stream.readsome(char_bytes, n);
 	}
 	else {
-		cout << "ERROR: Incompatible machine.";
+		std::cout << "ERROR: Incompatible machine.";
 	}
 
-	vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
+	std::vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
 	delete(char_bytes);
 
 	if (bytes.size() < 512) {
@@ -32,10 +31,10 @@ vector<uint8_t> ReadBytesFromFile(string filename, int n) {
 
 	return bytes;
 }
-void WriteBytesToFile(string filename, vector<uint8_t> bytes) {
-	static ofstream write_stream;
+void WriteBytesToFile(std::string filename, std::vector<uint8_t> bytes) {
+	static std::ofstream write_stream;
 	if (!write_stream.is_open()) {
-		write_stream.open(filename, std::ios_base::ate | ios_base::trunc | ios_base::binary);
+		write_stream.open(filename, std::ios_base::ate | std::ios_base::trunc | std::ios_base::binary);
 	}
 
 	write_stream.write(reinterpret_cast<char*>(bytes.data()), bytes.size());
@@ -45,10 +44,10 @@ void WriteBytesToFile(string filename, vector<uint8_t> bytes) {
 	}
 }
 
-void WriteNetASCIIToFile(string filename, vector<uint8_t> bytes) {
-	static ofstream write_stream;
+void WriteNetASCIIToFile(std::string filename, std::vector<uint8_t> bytes) {
+	static std::ofstream write_stream;
 	if (!write_stream.is_open()) {
-		write_stream.open(filename, std::ios_base::ate | ios_base::trunc);
+		write_stream.open(filename, std::ios_base::ate | std::ios_base::trunc);
 	}
 
 	for (int i = 0; i < bytes.size(); i++) {
@@ -63,14 +62,14 @@ void WriteNetASCIIToFile(string filename, vector<uint8_t> bytes) {
 		write_stream.close();
 	}
 }
-vector<uint8_t> ReadNetASCIIFromFile(string filename, int n) {
+std::vector<uint8_t> ReadNetASCIIFromFile(std::string filename, int n) {
 
-	static ifstream read_stream;
+	static std::ifstream read_stream;
 	if (!read_stream.is_open()) {
 		read_stream.open(filename);
 	}
 
-	streampos starting_read_position = read_stream.tellg();
+	std::streampos starting_read_position = read_stream.tellg();
 
 	char* char_bytes = new char[n];
 
@@ -78,10 +77,10 @@ vector<uint8_t> ReadNetASCIIFromFile(string filename, int n) {
 		read_stream.readsome(char_bytes, n);
 	}
 	else {
-		cout << "ERROR: Incompatible machine.";
+		std::cout << "ERROR: Incompatible machine.";
 	}
 
-	vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
+	std::vector<uint8_t> bytes(char_bytes, char_bytes + read_stream.tellg() - starting_read_position);
 	delete(char_bytes);
 
 	if (bytes.size() < 512) {

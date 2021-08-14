@@ -1,6 +1,8 @@
 #pragma once
-#include <string>
+
 #include <vector>
+#include <cstdint>
+#include <string>
 
 std::vector<uint8_t>ReadBytesFromFile(std::string filename, int n);
 void WriteBytesToFile(std::string filename, std::vector<uint8_t> bytes);

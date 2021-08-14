@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="files.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="communication.cpp" />
+    <ClCompile Include="packets.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="files.hpp" />
+    <ClInclude Include="communication.hpp" />
+    <ClInclude Include="packets.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="classes">
+      <UniqueIdentifier>{8234bc2f-ca89-4863-864f-d2fee9532baf}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
